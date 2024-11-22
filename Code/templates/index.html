@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Image Prediction</title>
+</head>
+<body>
+    <h1>Upload an Image for Prediction</h1>
+
+    <form id="uploadForm" enctype="multipart/form-data" onsubmit="event.preventDefault(); uploadImage();">
+        <label for="file">Choose an image:</label>
+        <input type="file" id="file" name="file" accept="image/*" onchange="previewImage(event)">
+        <br>
+        <label for="model">Select Model:</label>
+        <select id="model" name="model">
+            <option value="yolo">YOLOv11</option>
+            <option value="faster_rcnn">Faster R-CNN</option>
+            <option value="ensemble">Ensemble (YOLO + Faster R-CNN)</option>
+        </select>
+        <br><br>
+        <button type="submit">Submit</button>
+    </form>
+
+    <h2>Image Preview</h2>
+    <img id="preview" src="#" alt="Image preview" style="max-width: 500px; display: none;">
+
+    <h2>Prediction Result</h2>
+    <div id="resultdiv" style="display: none;"></div>
+    <img id="result" src="#" alt="Annotated Image" style="max-width: 500px; display: none;">
+
+    <script>
+        // Define separate dictionaries for YOLO and Faster R-CNN class mappings
+        const yoloClassNames = {
+            1: "Grenade",
+            2: "Handgun",
+            3: "Knife",
+            4: "Rifle",
+            5: "Sword",
+        };
+
+        const fasterRcnnClassNames = {
+            0: "background",
+            1: "Grenade",
+            2: "Handgun",
+            3: "Knife",
+            4: "Rifle",
+            5: "Sword",
+        };
+
+        // Function to preview the selected image
+        function previewImage(event) {
+            const reader = new FileReader();
+            reader.onload = function() {
+                const preview = document.getElementById('preview');
+                preview.src = reader.result;
+                preview.style.display = 'block';
+            };
+            reader.readAsDataURL(event.target.files[0]);
+        }
+
+        // Function to upload the image and display predictions
+        function uploadImage() {
+            const formData = new FormData(document.getElementById('uploadForm'));
+            const selectedModel = document.getElementById('model').value;
+
+            // Choose the correct class names dictionary based on the selected model
+            const classNames = selectedModel === 'yolo' ? yoloClassNames : (selectedModel === 'faster_rcnn' ? fasterRcnnClassNames : null);
+
+            fetch('/predict', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                const resultDiv = document.getElementById('resultdiv');
+                const resultImage = document.getElementById('result');
+
+                // Check if the response is for a single class prediction (e.g., CNN)
+                if (data.result && data.result.class !== undefined && data.result.confidence !== undefined) {
+                    document.getElementById('preview').style.display = "none";
+                    resultImage.style.display = "none";
+                    const className = classNames[data.result.class] || `Class ${data.result.class}`;
+                    resultDiv.innerHTML = `<p>Class: ${className}</p><p>Confidence: ${data.result.confidence.toFixed(2)}</p>`;
+                    resultDiv.style.display = "block";
+                }
+                // If annotated image and multiple predictions are returned (e.g., YOLO or Faster R-CNN)
+                else if (data.result && Array.isArray(data.result) && data.image_url) {
+                    resultImage.src = `${data.image_url}?t=${new Date().getTime()}`;
+                    resultImage.style.display = "block";
+                    
+                    // Display detected objects' labels and confidence scores with mapped class names
+                    resultDiv.style.display = "block";
+                    resultDiv.innerHTML = "<h3>Detected Objects:</h3>";
+                    data.result.forEach(prediction => {
+                        const className = classNames[prediction.label] || `Class ${prediction.label}`;
+                        resultDiv.innerHTML += `<p>Label: ${className}, Confidence: ${prediction.score.toFixed(2)}</p>`;
+                    });
+                } else {
+                    console.error("Unexpected response format:", data);
+                    resultDiv.innerHTML = "<p style='color: red;'>Error: Unexpected response format.</p>";
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                const resultDiv = document.getElementById('resultdiv');
+                resultDiv.style.display = "block";
+                resultDiv.innerHTML = "<p style='color: red;'>An error occurred while processing the image.</p>";
+            });
+        }
+    </script>
+    
+</body>
+</html>
